@@ -46,7 +46,8 @@ class User(Base):
     last_name: Mapped[str] = mapped_column(String(150), default="")
 
     def __str__(self):
-      return self.username
+        return self.username
+
 
 class Post(BaseModel):
     __tablename__ = "posts"
@@ -76,7 +77,8 @@ class Post(BaseModel):
     )
 
     def __str__(self):
-      return self.title
+        return self.title
+
 
 class Comment(Base):
     __tablename__ = "comments"
@@ -96,6 +98,4 @@ class Comment(Base):
     )
 
     def __str__(self):
-      return self.text[:30]
-
-  
+        return self.text[:30]

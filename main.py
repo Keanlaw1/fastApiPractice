@@ -1,16 +1,13 @@
 import asyncio
+
 import uvicorn
-import repositories
-
-from starlette.middleware.cors import CORSMiddleware
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+from starlette.middleware.cors import CORSMiddleware
 
+import repositories
 from database import engine
-from models import Post, User
-
 
 app = FastAPI(root_path="/api/v1")
 
@@ -22,13 +19,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.get("/posts/")
 def get_posts():
     with Session(engine) as session:
         return repositories.get_posts(session)
 
+
 class UserData(BaseModel):
     username: str
+
 
 @app.post("/users/", status_code=201)
 def create_user(data: UserData):
@@ -36,10 +36,12 @@ def create_user(data: UserData):
         user = repositories.create_user(session, data.username)
         return {"id": user.id, "username": user.username}
 
+
 class PostData(BaseModel):
     title: str
     text: str
     author_id: int
+
 
 @app.post("/posts/", status_code=201)
 def create_post(data: PostData):
@@ -51,7 +53,9 @@ def create_post(data: PostData):
                 status_code=404,
                 detail="Автор не найден",
             )
-        post = repositories.create_post(session, data.title, data.text, author.id)
+        post = repositories.create_post(
+            session, data.title, data.text, author.id
+        )
 
         return {
             "id": post.id,
@@ -59,6 +63,7 @@ def create_post(data: PostData):
             "text": post.text,
             "author_id": post.author_id,
         }
+
 
 @app.put("/posts/{post_id}/")
 def update_post(post_id: int, data: PostData):
@@ -77,13 +82,16 @@ def update_post(post_id: int, data: PostData):
                 detail="Автор не найден"
             )
 
-        post = repositories.update_post(session, post, data.title, data.text, author.id)
+        post = repositories.update_post(
+            session, post, data.title, data.text, author.id
+        )
         return {
             "id": post.id,
             "title": post.title,
             "text": post.text,
             "author_id": post.author_id,
         }
+
 
 @app.delete("/posts/{post_id}/")
 def delete_post(post_id: int):
@@ -96,6 +104,7 @@ def delete_post(post_id: int):
             )
         repositories.delete_post(session, post)
         return {"message": "Пост удалён"}
+
 
 async def run() -> None:
     config = uvicorn.Config(
