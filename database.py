@@ -1,17 +1,19 @@
-from sqlalchemy import create_engine, event
+import os
+
+from sqlalchemy import URL, create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 
 engine = create_engine(
-    "sqlite:///blogicum.db",
-    connect_args={"check_same_thread": False},
+    URL.create(
+        "postgresql+psycopg",
+        username="postgres",
+        password=os.environ["POSTGRES_PASSWORD"],
+        host="127.0.0.1",
+        port=5432,
+        database="blogicum",
+    )
 )
-
-@event.listens_for(engine, "connect")
-def enable_foreign_keys(connection, _):
-    cursor = connection.cursor()
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.close()
 
 SessionLocal = sessionmaker(bind=engine)
 

@@ -1,6 +1,7 @@
 import asyncio
 import uvicorn
-from fastapi import FastAPI
+import repositories
+
 from starlette.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -24,8 +25,7 @@ app.add_middleware(
 @app.get("/posts/")
 def get_posts():
     with Session(engine) as session:
-        posts = session.scalars(select(Post)).all()
-        return posts
+        return repositories.get_posts(session)
 
 class UserData(BaseModel):
     username: str
@@ -33,12 +33,7 @@ class UserData(BaseModel):
 @app.post("/users/", status_code=201)
 def create_user(data: UserData):
     with Session(engine) as session:
-        user = User(username=data.username)
-
-        session.add(user)
-        session.commit()
-        session.refresh(user)
-
+        user = repositories.create_user(session, data.username)
         return {"id": user.id, "username": user.username}
 
 class PostData(BaseModel):
@@ -49,21 +44,14 @@ class PostData(BaseModel):
 @app.post("/posts/", status_code=201)
 def create_post(data: PostData):
     with Session(engine) as session:
-        author = session.get(User, data.author_id)
+        author = repositories.get_users(session, data.author_id)
 
         if author is None:
             raise HTTPException(
                 status_code=404,
                 detail="Автор не найден",
             )
-        post = Post(
-            title=data.title,
-            text=data.text,
-            author_id=data.author_id,
-        )
-        session.add(post)
-        session.commit()
-        session.refresh(post)
+        post = repositories.create_post(session, data.title, data.text, author.id)
 
         return {
             "id": post.id,
@@ -75,27 +63,21 @@ def create_post(data: PostData):
 @app.put("/posts/{post_id}/")
 def update_post(post_id: int, data: PostData):
     with Session(engine) as session:
-        post = session.get(Post, post_id)
-
+        post = repositories.get_post(session, post_id)
         if post is None:
             raise HTTPException(
                 status_code=404,
                 detail="Пост не найден",
             )
 
-        if session.get(User, data.author_id) is None:
+        author = repositories.get_users(session, data.author_id)
+        if author is None:
             raise HTTPException(
                 status_code=404,
-                detail="Автор не найден",
+                detail="Автор не найден"
             )
 
-        post.title = data.title
-        post.text = data.text
-        post.author_id = data.author_id
-
-        session.commit()
-        session.refresh(post)
-
+        post = repositories.update_post(session, post, data.title, data.text, author.id)
         return {
             "id": post.id,
             "title": post.title,
@@ -106,17 +88,13 @@ def update_post(post_id: int, data: PostData):
 @app.delete("/posts/{post_id}/")
 def delete_post(post_id: int):
     with Session(engine) as session:
-        post = session.get(Post, post_id)
-
+        post = repositories.get_post(session, post_id)
         if post is None:
             raise HTTPException(
                 status_code=404,
                 detail="Пост не найден",
             )
-
-        session.delete(post)
-        session.commit()
-
+        repositories.delete_post(session, post)
         return {"message": "Пост удалён"}
 
 async def run() -> None:
