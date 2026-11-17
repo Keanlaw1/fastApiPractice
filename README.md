@@ -9,18 +9,22 @@
 - **Задание 2 — PostgreSQL** <br>
 Подключил PostgreSQL вместо SQLite. Вынес запросы к базе в repositories.py и добавил функции для всех пяти моделей
 
+- **Задание 3 — Alembic** <br>
+Сгенерировал первую миграцию и проверил, что она создаёт все таблицы в пустой базе PostgreSQL
 
 ## Запуск
 
-Нужен PostgreSQL. Внутри создать в pgAdmin пустую базу blogicum. Приложение подключается к ней на порту 5432 под пользователем postgres
+Нужен PostgreSQL. Внутри создать в pgAdmin пустую базу blogicum_alembic <br>
+Приложение подключается к ней на порту 5432 под пользователем postgres
 <br>
 ДалееЖ
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+$env:POSTGRES_DB = "blogicum_alembic"
 $env:POSTGRES_PASSWORD = (Get-Credential -UserName postgres -Message "Пароль PostgreSQL").GetNetworkCredential().Password
-python create_db.py
+python -m alembic upgrade head
 python -m uvicorn main:app --host 127.0.0.1 --port 8001
 ```
 

@@ -10,7 +10,7 @@ engine = create_engine(
         password=os.environ["POSTGRES_PASSWORD"],
         host="127.0.0.1",
         port=5432,
-        database="blogicum",
+        database=os.getenv("POSTGRES_DB", "blogicum"),
     )
 )
 
