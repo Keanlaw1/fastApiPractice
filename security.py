@@ -1,23 +1,23 @@
-import os
 from datetime import datetime, timedelta, timezone
 
 import jwt
 from pwdlib import PasswordHash
 
+from config import settings
+
 password_hash = PasswordHash.recommended()
 DUMMY_HASH = password_hash.hash("dummy-password-for-login-check")
 
 JWT_ALGORITHM = "HS256"
-ACCESS_TOKEN_MINUTES = 30
 
 
 def create_access_token(user_id):
     expires_at = datetime.now(timezone.utc) + timedelta(
-        minutes=ACCESS_TOKEN_MINUTES
+        minutes=settings.ACCESS_TOKEN_MINUTES
     )
     return jwt.encode(
         {"sub": str(user_id), "exp": expires_at},
-        os.environ["JWT_SECRET_KEY"],
+        settings.JWT_SECRET_KEY.get_secret_value(),
         algorithm=JWT_ALGORITHM,
     )
 
@@ -25,7 +25,7 @@ def create_access_token(user_id):
 def read_access_token(token):
     payload = jwt.decode(
         token,
-        os.environ["JWT_SECRET_KEY"],
+        settings.JWT_SECRET_KEY.get_secret_value(),
         algorithms=[JWT_ALGORITHM],
         options={"require": ["sub", "exp"]},
     )

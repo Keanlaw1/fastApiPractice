@@ -1,16 +1,16 @@
-import os
-
 from sqlalchemy import URL, create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
+
+from config import settings
 
 engine = create_engine(
     URL.create(
         "postgresql+psycopg",
-        username="postgres",
-        password=os.environ["POSTGRES_PASSWORD"],
-        host="127.0.0.1",
-        port=5432,
-        database=os.getenv("POSTGRES_DB", "blogicum"),
+        username=settings.POSTGRES_USER,
+        password=settings.POSTGRES_PASSWORD.get_secret_value(),
+        host=settings.POSTGRES_HOST,
+        port=settings.POSTGRES_PORT,
+        database=settings.POSTGRES_DB,
     )
 )
 

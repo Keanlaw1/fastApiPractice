@@ -20,3 +20,4 @@ pillow==13.0.0
 python-multipart==0.0.34
 PyJWT==2.15.1
 pwdlib[argon2]==0.4.2
+pydantic-settings==2.16.3

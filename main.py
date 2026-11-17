@@ -13,6 +13,7 @@ from starlette.middleware.cors import CORSMiddleware
 import photos
 import repositories
 import use_cases
+from activity import log_request
 from database import engine
 from dependencies import get_current_user
 from schemas import (CategoryData, CommentData, LocationData, PostData,
@@ -20,6 +21,7 @@ from schemas import (CategoryData, CommentData, LocationData, PostData,
 from security import create_access_token
 
 app = FastAPI(root_path="/api/v1")
+app.middleware("http")(log_request)
 
 photos.UPLOAD_DIR.mkdir(exist_ok=True)
 app.mount(
@@ -98,7 +100,7 @@ def get_post(post_id: int, request: Request):
 
 
 @app.post("/users/", status_code=201)
-def create_user(data: UserData):
+def create_user(data: UserData, request: Request):
     with Session(engine) as session:
         try:
             user = use_cases.register_user(
@@ -107,6 +109,7 @@ def create_user(data: UserData):
         except use_cases.UsernameTakenError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+        request.state.user_id = user.id
         return {"id": user.id, "username": user.username}
 
 
@@ -351,7 +354,10 @@ def get_image(image_id: int):
 
 
 @app.post("/token/", response_model=TokenResponse)
-def login(form: OAuth2PasswordRequestForm = Depends()):
+def login(
+    request: Request,
+    form: OAuth2PasswordRequestForm = Depends(),
+):
     with Session(engine) as session:
         try:
             user = use_cases.authenticate_user(
@@ -364,6 +370,7 @@ def login(form: OAuth2PasswordRequestForm = Depends()):
                 headers={"WWW-Authenticate": "Bearer"},
             ) from exc
 
+        request.state.user_id = user.id
         return {
             "access_token": create_access_token(user.id),
             "token_type": "bearer",
