@@ -10,8 +10,8 @@ class DuplicateUsernameError(Exception):
     pass
 
 
-def create_user(session, username):
-    user = User(username=username)
+def create_user(session, username, hashed_password):
+    user = User(username=username, hashed_password=hashed_password)
     session.add(user)
 
     try:
@@ -189,4 +189,9 @@ def get_image(session, image_id):
 
 def get_post_image(session, post_id):
     query = select(PostImage).where(PostImage.post_id == post_id)
+    return session.scalar(query)
+
+
+def get_user_by_username(session, username):
+    query = select(User).where(User.username == username)
     return session.scalar(query)

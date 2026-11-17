@@ -2,15 +2,20 @@ from sqlalchemy.exc import SQLAlchemyError
 
 import photos
 import repositories
+from security import DUMMY_HASH, password_hash
 
 
 class UsernameTakenError(Exception):
     pass
 
 
-def register_user(session, username):
+def register_user(session, username, password):
+    hashed_password = password_hash.hash(password)
+
     try:
-        return repositories.create_user(session, username)
+        return repositories.create_user(
+            session, username, hashed_password
+        )
     except repositories.DuplicateUsernameError as exc:
         raise UsernameTakenError(
             f"Имя пользователя '{username}' уже занято"
@@ -64,11 +69,10 @@ def create_post(
 
 
 def update_post(
-    session, post_id, title, text, author_id,
+    session, post_id, title, text, user_id,
     category_id=None, location_id=None,
 ):
-    post = _require_post(session, post_id)
-    author = _require_author(session, author_id)
+    post = _require_post_owner(session, post_id, user_id)
 
     if category_id is not None:
         get_category(session, category_id)
@@ -76,14 +80,14 @@ def update_post(
         get_location(session, location_id)
 
     return repositories.update_post(
-        session, post, title, text, author.id,
+        session, post, title, text, post.author_id,
         category_id=category_id,
         location_id=location_id,
     )
 
 
-def delete_post(session, post_id):
-    post = _require_post(session, post_id)
+def delete_post(session, post_id, user_id):
+    post = _require_post_owner(session, post_id, user_id)
     repositories.delete_post(session, post)
 
 
@@ -165,3 +169,33 @@ def get_image_path(session, image_id):
         raise NotFoundError("Файл изображения не найден")
 
     return path
+
+
+class InvalidCredentialsError(Exception):
+    pass
+
+
+def authenticate_user(session, username, password):
+    user = repositories.get_user_by_username(session, username)
+
+    stored_hash = DUMMY_HASH
+    if user is not None and user.hashed_password:
+        stored_hash = user.hashed_password
+
+    valid_password = password_hash.verify(password, stored_hash)
+
+    if user is None or not user.hashed_password or not valid_password:
+        raise InvalidCredentialsError("Неверный логин или пароль")
+
+    return user
+
+
+class PermissionDeniedError(Exception):
+    pass
+
+
+def _require_post_owner(session, post_id, user_id):
+    post = _require_post(session, post_id)
+    if post.author_id != user_id:
+        raise PermissionDeniedError("Можно менять только свои посты")
+    return post

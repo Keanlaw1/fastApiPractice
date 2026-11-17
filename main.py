@@ -1,9 +1,10 @@
 import asyncio
 
 import uvicorn
-from fastapi import (FastAPI, File, Form, HTTPException, Query, Request,
-                     UploadFile)
+from fastapi import (Depends, FastAPI, File, Form, HTTPException, Query,
+                     Request, UploadFile)
 from fastapi.responses import FileResponse
+from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
@@ -13,8 +14,10 @@ import photos
 import repositories
 import use_cases
 from database import engine
-from schemas import (CategoryData, CommentData, LikeData, LocationData,
-                     PostData, UserData)
+from dependencies import get_current_user
+from schemas import (CategoryData, CommentData, LocationData, PostData,
+                     TokenResponse, UserData)
+from security import create_access_token
 
 app = FastAPI(root_path="/api/v1")
 
@@ -98,7 +101,9 @@ def get_post(post_id: int, request: Request):
 def create_user(data: UserData):
     with Session(engine) as session:
         try:
-            user = use_cases.register_user(session, data.username)
+            user = use_cases.register_user(
+                session, data.username, data.password
+            )
         except use_cases.UsernameTakenError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -110,16 +115,15 @@ def create_post(
     request: Request,
     title: str = Form(),
     text: str = Form(),
-    author_id: int = Form(),
     image: UploadFile | None = File(default=None),
     category_id: int | None = Form(default=None, examples=[""]),
     location_id: int | None = Form(default=None, examples=[""]),
+    current_user=Depends(get_current_user),
 ):
     try:
         data = PostData(
             title=title,
             text=text,
-            author_id=author_id,
             category_id=category_id,
             location_id=location_id,
         )
@@ -135,7 +139,7 @@ def create_post(
     with Session(engine) as session:
         try:
             post = use_cases.create_post(
-                session, data.title, data.text, data.author_id, photo_file,
+                session, data.title, data.text, current_user.id, photo_file,
                 category_id=data.category_id,
                 location_id=data.location_id,
             )
@@ -159,27 +163,39 @@ def create_post(
 
 
 @app.put("/posts/{post_id}/")
-def update_post(post_id: int, data: PostData):
+def update_post(
+    post_id: int,
+    data: PostData,
+    current_user=Depends(get_current_user),
+):
     with Session(engine) as session:
         try:
             post = use_cases.update_post(
-                session, post_id, data.title, data.text, data.author_id,
+                session, post_id, data.title, data.text, current_user.id,
                 category_id=data.category_id,
                 location_id=data.location_id,
             )
         except use_cases.NotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except use_cases.PermissionDeniedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
 
         return post_to_dict(post)
 
 
 @app.delete("/posts/{post_id}/")
-def delete_post(post_id: int):
+def delete_post(
+    post_id: int,
+    current_user=Depends(get_current_user),
+):
     with Session(engine) as session:
         try:
-            use_cases.delete_post(session, post_id)
+            use_cases.delete_post(session, post_id, current_user.id)
         except use_cases.NotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except use_cases.PermissionDeniedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+
         return {"message": "Пост удалён"}
 
 
@@ -205,11 +221,15 @@ def get_comments(
 
 
 @app.post("/posts/{post_id}/comments/", status_code=201)
-def create_comment(post_id: int, data: CommentData):
+def create_comment(
+    post_id: int,
+    data: CommentData,
+    current_user=Depends(get_current_user),
+):
     with Session(engine) as session:
         try:
             comment = use_cases.create_comment(
-                session, post_id, data.text, data.author_id
+                session, post_id, data.text, current_user.id
             )
         except use_cases.NotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -224,10 +244,10 @@ def create_comment(post_id: int, data: CommentData):
 
 
 @app.post("/posts/{post_id}/likes/", status_code=201)
-def like_post(post_id: int, data: LikeData):
+def like_post(post_id: int, current_user=Depends(get_current_user)):
     with Session(engine) as session:
         try:
-            use_cases.like_post(session, post_id, data.user_id)
+            use_cases.like_post(session, post_id, current_user.id)
         except use_cases.NotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except use_cases.LikeAlreadyExistsError as exc:
@@ -245,18 +265,22 @@ def count_likes(post_id: int):
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@app.delete("/posts/{post_id}/likes/{user_id}/")
-def unlike_post(post_id: int, user_id: int):
+@app.delete("/posts/{post_id}/likes/")
+def unlike_post(post_id: int, current_user=Depends(get_current_user)):
     with Session(engine) as session:
         try:
-            use_cases.unlike_post(session, post_id, user_id)
+            use_cases.unlike_post(session, post_id, current_user.id)
         except use_cases.NotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
         return {"message": "Лайк снят"}
 
 
-@app.post("/locations/", status_code=201)
+@app.post(
+    "/locations/",
+    status_code=201,
+    dependencies=[Depends(get_current_user)],
+)
 def create_location(data: LocationData):
     with Session(engine) as session:
         location = repositories.create_location(session, data.name)
@@ -278,7 +302,11 @@ def get_location(location_id: int):
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@app.post("/categories/", status_code=201)
+@app.post(
+    "/categories/",
+    status_code=201,
+    dependencies=[Depends(get_current_user)],
+)
 def create_category(data: CategoryData):
     with Session(engine) as session:
         try:
@@ -320,6 +348,34 @@ def get_image(image_id: int):
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
         return FileResponse(path)
+
+
+@app.post("/token/", response_model=TokenResponse)
+def login(form: OAuth2PasswordRequestForm = Depends()):
+    with Session(engine) as session:
+        try:
+            user = use_cases.authenticate_user(
+                session, form.username, form.password
+            )
+        except use_cases.InvalidCredentialsError as exc:
+            raise HTTPException(
+                status_code=401,
+                detail=str(exc),
+                headers={"WWW-Authenticate": "Bearer"},
+            ) from exc
+
+        return {
+            "access_token": create_access_token(user.id),
+            "token_type": "bearer",
+        }
+
+
+@app.get("/users/me/")
+def get_my_profile(current_user=Depends(get_current_user)):
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+    }
 
 
 async def run() -> None:

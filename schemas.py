@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field, field_validator
 
 class UserData(BaseModel):
     username: str
+    password: str = Field(min_length=8, max_length=128)
 
     @field_validator("username")
     @classmethod
@@ -16,7 +17,6 @@ class UserData(BaseModel):
 class PostData(BaseModel):
     title: str
     text: str
-    author_id: int = Field(gt=0)
     category_id: int | None = Field(default=None, gt=0)
     location_id: int | None = Field(default=None, gt=0)
 
@@ -38,7 +38,6 @@ class PostData(BaseModel):
 
 class CommentData(BaseModel):
     text: str
-    author_id: int = Field(gt=0)
 
     @field_validator("text")
     @classmethod
@@ -46,10 +45,6 @@ class CommentData(BaseModel):
         if not text.strip():
             raise ValueError("Комментарий не должен быть пустым")
         return text
-
-
-class LikeData(BaseModel):
-    user_id: int = Field(gt=0)
 
 
 class LocationData(BaseModel):
@@ -79,3 +74,8 @@ class CategoryData(BaseModel):
         if isinstance(value, str):
             return value.strip()
         return value
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str
