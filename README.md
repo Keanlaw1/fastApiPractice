@@ -51,8 +51,12 @@ $author
 ### 2. Создать пост
 
 ```powershell
-$body = @{title = "First post"; text = "Hello"; author_id = $author.id} | ConvertTo-Json
-$post = Invoke-RestMethod -Method Post -Uri "$api/posts/" -ContentType "application/json" -Body $body
+$post = curl.exe -sS "$api/posts/" `
+    -F "title=First post" `
+    -F "text=Hello" `
+    -F "author_id=$($author.id)" `
+    -F "image=@C:\path\photo.jpg" | ConvertFrom-Json
+
 $post
 Invoke-RestMethod -Method Get -Uri "$api/posts/"
 ```
@@ -83,12 +87,14 @@ Invoke-RestMethod -Method Delete -Uri "$api/posts/$($post.id)/"
 Запустите сервер и откройте [Swagger](http://127.0.0.1:8001/docs)<br>
 Для каждого запроса раскройте нужную строку, нажмите Try it out, заполните поля и нажмите Execute
 
-1. **POST /users/ --- создайте пользователя**<br>
+1. **POST /users/ --- создать пользователя**<br>
 Вставьте {"username": "student1"} и запомните id из ответа. Если такое имя уже есть, возьмите другое.
 
 
-2. **POST /posts/ --- создайте пост**<br>
-Вставьте {"title": "Первый пост", "text": "Привет!", "author_id": 1} Вместо 1 подставьте id пользователя из первого шага. Используйте id созданного поста далее
+2. **POST /posts/ --- создайть пост**<br>
+Заполните поля title, text, в author_id укажите id пользователя из первого шага<br>
+В поле image выберите фото JPEG или PNG до 5 Mb<br>
+Запомните id созданного поста. По ссылке image_url из ответа можно открыть фото
 
 
 3. **GET /posts/ --- открыть список постов**<br>
@@ -99,5 +105,27 @@ Invoke-RestMethod -Method Delete -Uri "$api/posts/$($post.id)/"
 Укажите id поста и отправьте {"title": "Новый заголовок", "text": "Новый текст", "author_id": 1}. В author_id снова укажите id своего пользователя
 
 
-5. **DELETE /posts/{post_id}/ --- удалить пост**<br>
+5. **POST /posts/{post_id}/comments/ --- добавить комментарий**<br>
+Укажите id поста и отправьте {"text": "Классное фото!", "author_id": 1}<br>
+Вместо 1 подставьте id пользователя
+
+
+6. **GET /posts/{post_id}/comments/ --- открыть комментарии**<br>
+Укажите тот же id поста. В списке должен появиться ваш комментарий.
+
+
+7. **POST /posts/{post_id}/likes/ --- поставить лайк**<br>
+Укажите id поста и отправьте {"user_id": 1}<br>
+Вместо 1 подставьте id пользователя. Если отправить тот же запрос ещё раз, сервер вернёт `409`
+
+
+8. **GET /posts/{post_id}/likes/ --- проверить количество лайков**<br>
+Укажите id поста. В ответе будет число лайков в поле count
+
+
+9. **DELETE /posts/{post_id}/likes/{user_id}/ --- убрать лайк**<br>
+Укажите id поста и id пользователя. Снова проверьте количество лайков и оно будет меньше на один
+
+
+10. **DELETE /posts/{post_id}/ --- удалить пост**<br>
 Укажите тот же id поста. В GET /posts/ можно увидеть что поста больше нет...

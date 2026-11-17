@@ -32,3 +32,19 @@ class PostData(BaseModel):
         if not text.strip():
             raise ValueError("Текст поста не должен быть пустым")
         return text
+
+
+class CommentData(BaseModel):
+    text: str
+    author_id: int = Field(gt=0)
+
+    @field_validator("text")
+    @classmethod
+    def validate_text(cls, text: str) -> str:
+        if not text.strip():
+            raise ValueError("Комментарий не должен быть пустым")
+        return text
+
+
+class LikeData(BaseModel):
+    user_id: int = Field(gt=0)

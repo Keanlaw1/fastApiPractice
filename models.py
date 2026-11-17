@@ -99,3 +99,16 @@ class Comment(Base):
 
     def __str__(self):
         return self.text[:30]
+
+
+class Like(Base):
+    __tablename__ = "likes"
+
+    post_id: Mapped[int] = mapped_column(
+        ForeignKey("posts.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
