@@ -1,12 +1,29 @@
+from psycopg.errors import UniqueViolation
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from models import Category, Comment, Location, Post, User
+
+
+class DuplicateUsernameError(Exception):
+    pass
 
 
 def create_user(session, username):
     user = User(username=username)
     session.add(user)
-    session.commit()
+
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        if (
+            isinstance(exc.orig, UniqueViolation)
+            and exc.orig.diag.constraint_name == "users_username_key"
+        ):
+            raise DuplicateUsernameError from exc
+        raise
+
     session.refresh(user)
     return user
 

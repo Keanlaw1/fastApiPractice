@@ -2,12 +2,13 @@ import asyncio
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from starlette.middleware.cors import CORSMiddleware
 
 import repositories
+import use_cases
 from database import engine
+from schemas import PostData, UserData
 
 app = FastAPI(root_path="/api/v1")
 
@@ -26,37 +27,26 @@ def get_posts():
         return repositories.get_posts(session)
 
 
-class UserData(BaseModel):
-    username: str
-
-
 @app.post("/users/", status_code=201)
 def create_user(data: UserData):
     with Session(engine) as session:
-        user = repositories.create_user(session, data.username)
+        try:
+            user = use_cases.register_user(session, data.username)
+        except use_cases.UsernameTakenError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
         return {"id": user.id, "username": user.username}
-
-
-class PostData(BaseModel):
-    title: str
-    text: str
-    author_id: int
 
 
 @app.post("/posts/", status_code=201)
 def create_post(data: PostData):
     with Session(engine) as session:
-        author = repositories.get_users(session, data.author_id)
-
-        if author is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Автор не найден",
+        try:
+            post = use_cases.create_post(
+                session, data.title, data.text, data.author_id
             )
-        post = repositories.create_post(
-            session, data.title, data.text, author.id
-        )
-
+        except use_cases.NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {
             "id": post.id,
             "title": post.title,
@@ -68,23 +58,12 @@ def create_post(data: PostData):
 @app.put("/posts/{post_id}/")
 def update_post(post_id: int, data: PostData):
     with Session(engine) as session:
-        post = repositories.get_post(session, post_id)
-        if post is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Пост не найден",
+        try:
+            post = use_cases.update_post(
+                session, post_id, data.title, data.text, data.author_id
             )
-
-        author = repositories.get_users(session, data.author_id)
-        if author is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Автор не найден"
-            )
-
-        post = repositories.update_post(
-            session, post, data.title, data.text, author.id
-        )
+        except use_cases.NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {
             "id": post.id,
             "title": post.title,
@@ -96,13 +75,10 @@ def update_post(post_id: int, data: PostData):
 @app.delete("/posts/{post_id}/")
 def delete_post(post_id: int):
     with Session(engine) as session:
-        post = repositories.get_post(session, post_id)
-        if post is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Пост не найден",
-            )
-        repositories.delete_post(session, post)
+        try:
+            use_cases.delete_post(session, post_id)
+        except use_cases.NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {"message": "Пост удалён"}
 
 
