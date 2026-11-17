@@ -17,6 +17,8 @@ class PostData(BaseModel):
     title: str
     text: str
     author_id: int = Field(gt=0)
+    category_id: int | None = Field(default=None, gt=0)
+    location_id: int | None = Field(default=None, gt=0)
 
     @field_validator("title")
     @classmethod
@@ -48,3 +50,32 @@ class CommentData(BaseModel):
 
 class LikeData(BaseModel):
     user_id: int = Field(gt=0)
+
+
+class LocationData(BaseModel):
+    name: str
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, name: str) -> str:
+        name = name.strip()
+        if not 1 <= len(name) <= 256:
+            raise ValueError("Название должно содержать от 1 до 256 символов")
+        return name
+
+
+class CategoryData(BaseModel):
+    title: str = Field(min_length=1, max_length=256)
+    description: str = Field(min_length=1)
+    slug: str = Field(
+        min_length=1,
+        max_length=50,
+        pattern=r"^[a-zA-Z0-9_-]+$",
+    )
+
+    @field_validator("title", "description", "slug", mode="before")
+    @classmethod
+    def strip_spaces(cls, value):
+        if isinstance(value, str):
+            return value.strip()
+        return value

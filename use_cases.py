@@ -35,24 +35,51 @@ def _require_author(session, author_id):
     return author
 
 
-def create_post(session, title, text, author_id, photo_file):
+def create_post(
+    session, title, text, author_id, photo_file,
+    category_id=None, location_id=None,
+):
     author = _require_author(session, author_id)
-    filename = photos.save_photo(photo_file)
+
+    if category_id is not None:
+        get_category(session, category_id)
+    if location_id is not None:
+        get_location(session, location_id)
+
+    filename = None
+    if photo_file is not None:
+        filename = photos.save_photo(photo_file)
 
     try:
         return repositories.create_post(
-            session, title, text, author.id, filename
+            session, title, text, author.id, filename,
+            category_id=category_id,
+            location_id=location_id,
         )
     except SQLAlchemyError:
         session.rollback()
-        (photos.UPLOAD_DIR / filename).unlink(missing_ok=True)
+        if filename is not None:
+            (photos.UPLOAD_DIR / filename).unlink(missing_ok=True)
         raise
 
 
-def update_post(session, post_id, title, text, author_id):
+def update_post(
+    session, post_id, title, text, author_id,
+    category_id=None, location_id=None,
+):
     post = _require_post(session, post_id)
     author = _require_author(session, author_id)
-    return repositories.update_post(session, post, title, text, author.id)
+
+    if category_id is not None:
+        get_category(session, category_id)
+    if location_id is not None:
+        get_location(session, location_id)
+
+    return repositories.update_post(
+        session, post, title, text, author.id,
+        category_id=category_id,
+        location_id=location_id,
+    )
 
 
 def delete_post(session, post_id):
@@ -60,9 +87,9 @@ def delete_post(session, post_id):
     repositories.delete_post(session, post)
 
 
-def get_comments(session, post_id):
+def get_comments(session, post_id, limit=10, page=1):
     post = _require_post(session, post_id)
-    return repositories.get_comments(session, post.id)
+    return repositories.get_comments(session, post.id, limit, page)
 
 
 def create_comment(session, post_id, text, author_id):
@@ -93,3 +120,48 @@ def unlike_post(session, post_id, user_id):
     post = _require_post(session, post_id)
     if not repositories.delete_like(session, post.id, user_id):
         raise NotFoundError("Лайк не найден")
+
+
+def get_post(session, post_id):
+    return _require_post(session, post_id)
+
+
+def get_location(session, location_id):
+    location = repositories.get_location(session, location_id)
+    if location is None:
+        raise NotFoundError("Локация не найдена")
+    return location
+
+
+class CategorySlugTakenError(Exception):
+    pass
+
+
+def create_category(session, title, description, slug):
+    try:
+        return repositories.create_category(
+            session, title, description, slug
+        )
+    except repositories.DuplicateCategorySlugError as exc:
+        raise CategorySlugTakenError(
+            f"Категория со slug '{slug}' уже существует"
+        ) from exc
+
+
+def get_category(session, category_id):
+    category = repositories.get_category(session, category_id)
+    if category is None:
+        raise NotFoundError("Категория не найдена")
+    return category
+
+
+def get_image_path(session, image_id):
+    image = repositories.get_image(session, image_id)
+    if image is None:
+        raise NotFoundError("Изображение не найдено")
+
+    path = photos.UPLOAD_DIR / image.filename
+    if not path.is_file():
+        raise NotFoundError("Файл изображения не найден")
+
+    return path

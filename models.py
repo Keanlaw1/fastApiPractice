@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import ForeignKey, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
 
@@ -71,10 +71,8 @@ class Post(BaseModel):
       ForeignKey("locations.id", ondelete="SET NULL"),
       nullable=True,
     )
-    image: Mapped[str | None] = mapped_column(
-      String(100),
-      nullable=True,
-    )
+    category: Mapped[Category | None] = relationship(lazy="joined")
+    location: Mapped[Location | None] = relationship(lazy="joined")
 
     def __str__(self):
         return self.title
@@ -111,4 +109,15 @@ class Like(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
         primary_key=True,
+    )
+
+
+class PostImage(Base):
+    __tablename__ = "images"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    filename: Mapped[str] = mapped_column(String(100))
+    post_id: Mapped[int] = mapped_column(
+        ForeignKey("posts.id", ondelete="CASCADE"),
+        unique=True,
     )

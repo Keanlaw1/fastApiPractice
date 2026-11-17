@@ -1,7 +1,9 @@
 import asyncio
 
 import uvicorn
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import (FastAPI, File, Form, HTTPException, Query, Request,
+                     UploadFile)
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
@@ -11,7 +13,8 @@ import photos
 import repositories
 import use_cases
 from database import engine
-from schemas import CommentData, LikeData, PostData, UserData
+from schemas import (CategoryData, CommentData, LikeData, LocationData,
+                     PostData, UserData)
 
 app = FastAPI(root_path="/api/v1")
 
@@ -31,10 +34,64 @@ app.add_middleware(
 )
 
 
+def post_to_dict(post):
+    category_name = None
+    if post.category is not None:
+        category_name = post.category.title
+
+    location_name = None
+    if post.location is not None:
+        location_name = post.location.name
+
+    return {
+        "id": post.id,
+        "title": post.title,
+        "text": post.text,
+        "author_id": post.author_id,
+        "category_id": post.category_id,
+        "category_name": category_name,
+        "location_id": post.location_id,
+        "location_name": location_name,
+        "is_published": post.is_published,
+        "pub_date": post.pub_date,
+        "created_at": post.created_at,
+    }
+
+
 @app.get("/posts/")
-def get_posts():
+def get_posts(
+    limit: int = Query(default=10, ge=1, le=100),
+    page: int = Query(default=1, ge=1),
+):
     with Session(engine) as session:
-        return repositories.get_posts(session)
+        posts = repositories.get_posts(session, limit, page)
+        return {
+            "page": page,
+            "limit": limit,
+            "posts": [post_to_dict(post) for post in posts],
+        }
+
+
+@app.get("/posts/{post_id}/")
+def get_post(post_id: int, request: Request):
+    with Session(engine) as session:
+        try:
+            post = use_cases.get_post(session, post_id)
+        except use_cases.NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        result = post_to_dict(post)
+        result["image_id"] = None
+        result["image_url"] = None
+
+        image = repositories.get_post_image(session, post.id)
+        if image is not None:
+            result["image_id"] = image.id
+            result["image_url"] = str(
+                request.url_for("get_image", image_id=image.id)
+            )
+
+        return result
 
 
 @app.post("/users/", status_code=201)
@@ -54,33 +111,51 @@ def create_post(
     title: str = Form(),
     text: str = Form(),
     author_id: int = Form(),
-    image: UploadFile = File(),
+    image: UploadFile | None = File(default=None),
+    category_id: int | None = Form(default=None, examples=[""]),
+    location_id: int | None = Form(default=None, examples=[""]),
 ):
     try:
-        data = PostData(title=title, text=text, author_id=author_id)
+        data = PostData(
+            title=title,
+            text=text,
+            author_id=author_id,
+            category_id=category_id,
+            location_id=location_id,
+        )
     except ValidationError as exc:
         raise HTTPException(
             status_code=422,
             detail=exc.errors(include_context=False),
         ) from exc
+    photo_file = None
+    if image is not None and image.filename:
+        photo_file = image.file
 
     with Session(engine) as session:
         try:
             post = use_cases.create_post(
-                session, data.title, data.text, data.author_id, image.file
+                session, data.title, data.text, data.author_id, photo_file,
+                category_id=data.category_id,
+                location_id=data.location_id,
             )
         except use_cases.NotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except photos.InvalidPhotoError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-        return {
-            "id": post.id,
-            "title": post.title,
-            "text": post.text,
-            "author_id": post.author_id,
-            "image_url": str(request.url_for("uploads", path=post.image)),
-        }
+        image = repositories.get_post_image(session, post.id)
+        image_id = None
+        image_url = None
+
+        if image is not None:
+            image_id = image.id
+            image_url = str(request.url_for("get_image", image_id=image.id))
+
+        result = post_to_dict(post)
+        result["image_id"] = image_id
+        result["image_url"] = image_url
+        return result
 
 
 @app.put("/posts/{post_id}/")
@@ -88,16 +163,14 @@ def update_post(post_id: int, data: PostData):
     with Session(engine) as session:
         try:
             post = use_cases.update_post(
-                session, post_id, data.title, data.text, data.author_id
+                session, post_id, data.title, data.text, data.author_id,
+                category_id=data.category_id,
+                location_id=data.location_id,
             )
         except use_cases.NotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        return {
-            "id": post.id,
-            "title": post.title,
-            "text": post.text,
-            "author_id": post.author_id,
-        }
+
+        return post_to_dict(post)
 
 
 @app.delete("/posts/{post_id}/")
@@ -111,12 +184,24 @@ def delete_post(post_id: int):
 
 
 @app.get("/posts/{post_id}/comments/")
-def get_comments(post_id: int):
+def get_comments(
+    post_id: int,
+    limit: int = Query(default=10, ge=1, le=100),
+    page: int = Query(default=1, ge=1),
+):
     with Session(engine) as session:
         try:
-            return use_cases.get_comments(session, post_id)
+            comments = use_cases.get_comments(
+                session, post_id, limit, page
+            )
         except use_cases.NotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        return {
+            "page": page,
+            "limit": limit,
+            "comments": comments,
+        }
 
 
 @app.post("/posts/{post_id}/comments/", status_code=201)
@@ -169,6 +254,72 @@ def unlike_post(post_id: int, user_id: int):
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
         return {"message": "Лайк снят"}
+
+
+@app.post("/locations/", status_code=201)
+def create_location(data: LocationData):
+    with Session(engine) as session:
+        location = repositories.create_location(session, data.name)
+        return {"id": location.id, "name": location.name}
+
+
+@app.get("/locations/")
+def get_locations():
+    with Session(engine) as session:
+        return repositories.get_locations(session)
+
+
+@app.get("/locations/{location_id}/")
+def get_location(location_id: int):
+    with Session(engine) as session:
+        try:
+            return use_cases.get_location(session, location_id)
+        except use_cases.NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/categories/", status_code=201)
+def create_category(data: CategoryData):
+    with Session(engine) as session:
+        try:
+            category = use_cases.create_category(
+                session, data.title, data.description, data.slug
+            )
+        except use_cases.CategorySlugTakenError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        return {
+            "id": category.id,
+            "title": category.title,
+            "description": category.description,
+            "slug": category.slug,
+        }
+
+
+@app.get("/categories/")
+def get_categories():
+    with Session(engine) as session:
+        return repositories.get_categories(session)
+
+
+@app.get("/categories/{category_id}/")
+def get_category(category_id: int):
+    with Session(engine) as session:
+        try:
+            return use_cases.get_category(session, category_id)
+        except use_cases.NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/images/{image_id}/", response_class=FileResponse)
+def get_image(image_id: int):
+    with Session(engine) as session:
+        try:
+            path = use_cases.get_image_path(session, image_id)
+        except use_cases.NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        return FileResponse(path)
 
 
 async def run() -> None:
